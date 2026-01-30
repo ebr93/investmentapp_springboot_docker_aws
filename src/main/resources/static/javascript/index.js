@@ -11,8 +11,14 @@ const options = {
 
 async function getData(container) {
   try {
-    const response = await fetch('https://apidojo-yahoo-finance-v1.p.rapidapi.com/news/list?category=generalnews&region=US', options);
+    // calls the backend instead
+    const response = await fetch('/api/market/news?category=generalnews&region=US');
     const responseData = await response.json();
+    
+    if (!response.ok) {
+      console.error("News API error:", responseData);
+      throw new Error(responseData?.message || "News request failed");
+    }
 
     console.log(responseData);
     console.log(responseData.items);

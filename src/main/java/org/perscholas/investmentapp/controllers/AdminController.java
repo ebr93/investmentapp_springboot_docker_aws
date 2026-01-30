@@ -65,11 +65,13 @@ public class AdminController {
     public String modifyUser(@ModelAttribute("editUser") User userEdit,
                              @RequestParam("user-email") String email,
                              @RequestParam("first-name") String firstName,
-                             @RequestParam("last-name") String lastName) {
+                             @RequestParam("last-name") String lastName) 
+                             throws Exception {
         Optional<User> userOptional = userRepoI.findByEmailAllIgnoreCase(email);
 
         if (userOptional.isPresent()) {
             User user = userOptional.get();
+            
             user.setFirstName(firstName);
             user.setLastName(lastName);
             user.setEmail(email);
@@ -87,20 +89,27 @@ public class AdminController {
             log.warn("/admin/users/delete: delete user has initialized");
             log.warn("/admin/users/delete: user with email " + email +
                     "deleted");
-            User user = userRepoI.findByEmail(email).get();
+            User user = userRepoI.findByEmail(email)
+                    .orElseThrow(() -> new Exception("AdminController: user not found: " + email));
+            
 
             // deletes all possessions, to get rid of foreign keys
             Optional<List<Possession>> userPossessions =
                     possessionRepoI.findByUser(user);
             if (userPossessions.isPresent()) {
                 List<Possession> possessions = userPossessions.get();
+                
                 for (Possession p : possessions) {
                     userServices.deletePossesionToUser(p.getStock(), user);
                 }
             }
 
-            AuthGroup userAuth =
-                    authGroupRepoI.findByEmail(user.getEmail()).get(0);
+            List<AuthGroup> groups = authGroupRepoI.findByEmail(user.getEmail());
+            if (groups == null || groups.isEmpty()) {
+                throw new Exception("AdminController: no AuthGroup found for email: " + user.getEmail());
+            }
+            AuthGroup userAuth = groups.get(0);
+
             authGroupRepoI.delete(userAuth);
             userRepoI.delete(user);
         } else {
@@ -137,6 +146,7 @@ public class AdminController {
 
         if (stockOptional.isPresent()) {
             Stock originalStock = stockOptional.get();
+            
             originalStock.setStockName(stockName);
 
             originalStock.setPrice(BigDecimal.valueOf(Double.valueOf(price)));
@@ -159,13 +169,18 @@ public class AdminController {
         Optional<Stock> stockOptional = stockRepoI.findByTicker(ticker);
         if (stockOptional.isPresent()) {
             log.warn("/admin/stock/delete: delete stock has initialized");
-            Stock stock = stockOptional.get();
+            Stock stock = stockOptional.get();            
+
             // deletes all possessions, to get rid of foreign keys
             Optional<List<Possession>> stockUsage =
                     possessionRepoI.findByStock(stock);
 
             if (stockUsage.isPresent()) {
+                if (stockUsage.isEmpty()) {
+                    throw new Exception("AdminController: stock usage lookup failed / empty");
+                }
                 List<Possession> possessions = stockUsage.get();
+                
                 for (Possession p : possessions) {
                     userServices.deletePossesionToUser(p);
                 }

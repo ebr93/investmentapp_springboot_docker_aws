@@ -25,8 +25,9 @@ public class StockServices {
         this.possessionRepoI = possessionRepoI;
     }
 
+    // updates or creates a stock
     public Stock createOrUpdate(Stock stock) {
-        Optional<Stock> stockOptional =
+        var stockOptional =
                 stockRepoI.findByTicker(stock.getTicker());
         if (stockOptional.isPresent()) {
             log.warn("createOrUpdate(): stock with ticker " + stock.getTicker() +
@@ -39,28 +40,31 @@ public class StockServices {
             return stockRepoI.save(originalStock);
         } else {
             log.warn("createOrUpdate(): stock with ticker " + stock.getTicker() +
-                    " already exists, updating");
+                    " does not exists, adding");
             return stockRepoI.save(stock);
         }
     }
 
-    public Stock savePositionToStock(int stockId, int possessionId) throws Exception {
-        if(stockRepoI.findById(stockId).isPresent() && possessionRepoI.findById(possessionId).isPresent()) {
-            Stock stock = stockRepoI.findById(stockId).get();
-            Possession possession = possessionRepoI.findById(possessionId).get();
+    // ****** CLEANER VERSION
+    public Stock savePositionToStock(Integer stockId, Integer possessionId) throws Exception {
 
+        var stockOpt = stockRepoI.findById(stockId);
+        var possessionOpt = possessionRepoI.findById(possessionId);
+    
+        if (stockOpt.isPresent() && possessionOpt.isPresent()) {
+            Stock stock = stockOpt.get();
+            Possession possession = possessionOpt.get();
+    
             log.warn("savePositionToStock(): stock with ticker " + stock.getTicker() +
                     " updating new possession");
-
+    
             stock.addPossession(possession);
-
-            stock = stockRepoI.saveAndFlush(stock);
-
-            return stock;
+    
+            return stockRepoI.saveAndFlush(stock);
         } else {
             throw new Exception("saving a possession to the stock with ID " + stockId + " did not go well!!!!!");
         }
-    }
+    }  
 
     public List<StockDTO> allStocks() {
         return stockRepoI.findAll()

@@ -1,0 +1,40 @@
+services:
+  db:
+    image: mysql:8.0
+    env_file:
+      - .env
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sapp}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      MARKET_API_KEY: ${MARKET_API_KEY}
+      MARKET_API_HOST: ${MARKET_API_HOST:-apidojo-yahoo-finance-v1.p.rapidapi.com}
+      # optional: if you want DB creds also coming from .env instead of hardcoded
+      # SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      # SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      # SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+
+volumes:
+  mysql_data:

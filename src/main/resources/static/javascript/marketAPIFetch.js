@@ -2,44 +2,59 @@ import stockObject from "./stockobject";
 import intList from "./investmentsArray";
 
 const orderAPI = (() => {
-  const options = {
-    method: 'GET',
-    headers: {
-      'X-RapidAPI-Key': '66d7085b62msh288087059e8ae40p1c5d91jsnb5aa211a244e',
-      'X-RapidAPI-Host': 'apidojo-yahoo-finance-v1.p.rapidapi.com'
-    } 
-  };
 
-  async function getQuote() {
+  // same function signature; you can pass symbols optionally
+  async function getQuote(symbols = ["AMD","IBM","AAPL","TSLA","AMZN","MSFT","GOOGL"]) {
     try {
-      const response = await fetch('https://apidojo-yahoo-finance-v1.p.rapidapi.com/market/v2/get-quotes?region=US&symbols=AMD%2CIBM%2CAAPL%2CTSLA%2CAMZN%2CMSFT%2CGOOGL', options);
+      const symbolParam = symbols.join(",");
+
+      // Call YOUR backend (not RapidAPI directly)
+      const response = await fetch(`/api/market/quotes?region=US&symbols=${encodeURIComponent(symbolParam)}`, {
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`getQuote(): backend failed (${response.status}) ${body}`);
+      }
+
       const responseData = await response.json();
       console.log(responseData);
 
-      //const rightContainer = document.querySelector('#stocks-container');
-      console.log(responseData.quoteResponse.result[0]);
-      console.log(responseData.quoteResponse.result[1]);
-      console.log(responseData.quoteResponse.result[2]);
-       
-      // quoteResponse allows us to access the result of the API call
+      // RapidAPI response shape preserved: quoteResponse.result[]
       const stockData = responseData.quoteResponse;
 
-      for (let i = 0; i < 7; i++) {
-        const newStockObject = new stockObject(stockData.result[i].shortName, stockData.result[i].symbol, stockData.result[i].ask, stockData.result[i].regularMarketChangePercent);
+      // Clear old list if you want fresh data each time (optional)
+      // intList.length = 0;
+
+      for (let i = 0; i < Math.min(7, stockData.result.length); i++) {
+        const r = stockData.result[i];
+
+        // IMPORTANT: "ask" is often null. Prefer regularMarketPrice fallback.
+        const price = (r.ask != null) ? r.ask : r.regularMarketPrice;
+
+        const newStockObject = new stockObject(
+          r.shortName,
+          r.symbol,
+          price,
+          r.regularMarketChangePercent
+        );
+
         intList.push(newStockObject);
         console.log(`Inside Loop + getQuote(): ${intList}`);
       }
+
       console.log(`Outside Loop + getQuote(): ${intList}`);
 
       return responseData;
     } catch (err) {
-      console.error(err);
+      console.error("getQuote():", err);
+      throw err; // let caller handle errors too
     }
   }
 
-  return {
-    getQuote
-  }
-})()
+  return { getQuote };
+})();
 
 export default orderAPI;

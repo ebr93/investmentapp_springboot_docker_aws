@@ -66,7 +66,9 @@ public class HomeController {
         List<StockDTO> allStocks = stockServices.allStocks();
         model.addAttribute("allStocks", allStocks);
 
-        User myUser = userRepoI.findById(1).get();
+        User myUser = userRepoI.findById(1)
+        .orElseThrow(() -> new Exception("HomeController: user id=1 not found (seed data missing?)"));
+
         model.addAttribute("myUser", myUser);
 
         List<Possession> userPortfolio = userServices.retrievePortfolio(myUser.getEmail());
@@ -82,8 +84,13 @@ public class HomeController {
     public String addStock(@RequestParam("ticker") String ticker,
                            @RequestParam("shares") double shares) throws Exception {
         log.warn("/dashboard/addstock: add stock has initialized");
-        User userOne = userRepoI.findById(1).get();
-        Stock stock = stockRepoI.findByTicker(ticker).get();
+
+        User userOne = userRepoI.findById(1)
+        .orElseThrow(() -> new Exception("HomeController: user id=1 not found (seed data missing?)"));
+        
+        Stock stock = stockRepoI.findByTicker(ticker)
+        .orElseThrow(() -> new Exception("HomeController: ticker not found: " + ticker));
+
         Possession possession = new Possession(shares, userOne, stock);
 
         possessionServices.createOrUpdate(possession, userOne, stock);
@@ -94,7 +101,7 @@ public class HomeController {
 
     @GetMapping("/login")
     public String loginPageValidation(Model model) {
-//        model.addAttribute("user", new User());
+        // model.addAttribute("user", new User());
         log.warn("/login: I am in login page");
 
         return "login";
@@ -142,13 +149,15 @@ public class HomeController {
         return "error";
     }
 
-    @GetMapping("/user/{id}")
-    public String getUserWithID(@PathVariable(name = "id") int id,
-                                Model model) {
+    // DTO implementation
+    @GetMapping("/user/{id:\\d+}")
+    public String getUserWithID(@PathVariable int id, Model model) throws Exception {
         log.warn(String.valueOf(id));
         log.warn(userRepoI.findById(id).toString());
-        User user = userRepoI.findById(id).get();
-        model.addAttribute("currenUser", user);
+
+        User user = userRepoI.findById(id)
+        .orElseThrow(() -> new Exception("HomeController: user id=" + id + " not found"));
+        model.addAttribute("currentUser", user);
 
         List<StockDTO> allStocks = stockServices.allStocks();
 

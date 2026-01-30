@@ -4,8 +4,8 @@ import jakarta.transaction.Transactional;
 import lombok.AccessLevel;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
-import org.perscholas.investmentapp.dao.StockRepoI;
 import org.perscholas.investmentapp.dao.PossessionRepoI;
+import org.perscholas.investmentapp.dao.StockRepoI;
 import org.perscholas.investmentapp.dao.UserRepoI;
 import org.perscholas.investmentapp.models.Possession;
 import org.perscholas.investmentapp.models.Stock;
@@ -20,78 +20,98 @@ import java.util.Optional;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Transactional(rollbackOn = Exception.class)
 public class PossessionServices {
+
     UserRepoI userRepoI;
     PossessionRepoI possessionRepoI;
     StockRepoI stockRepoI;
-    UserServices userServices;
-    StockServices stockServices;
 
     @Autowired
-    public PossessionServices(UserRepoI userRepoI, PossessionRepoI possessionRepoI,
-                              StockRepoI stockRepoI, UserServices userServices,
-                              StockServices stockServices) {
+    public PossessionServices(UserRepoI userRepoI,
+                             PossessionRepoI possessionRepoI,
+                             StockRepoI stockRepoI,
+                             UserServices userServices,   // kept for constructor compatibility (unused here)
+                             StockServices stockServices  // kept for constructor compatibility (unused here)
+    ) {
         this.userRepoI = userRepoI;
         this.possessionRepoI = possessionRepoI;
         this.stockRepoI = stockRepoI;
-        this.userServices = userServices;
-        this.stockServices = stockServices;
     }
 
+    /**
+     * Professional rule: never persist relationships using detached entities from the web layer.
+     * Always "confirm" (reload) the User + Stock from the DB first, then save/update using those.
+     */
     public Possession createOrUpdate(Possession possession) throws Exception {
-        Optional<Possession> possessionOptional = possessionRepoI.findByUserAndStock(possession.getUser(), possession.getStock());
-        Optional<User> userOptional = userRepoI.findByEmail(possession.getUser().getEmail());
-        Optional<Stock> stockOptional = stockRepoI.findByTicker(possession.getStock().getTicker());
-
-
-        if (possessionOptional.isPresent()) {
-            log.debug("Possession with user " + possession.getUser().getEmail() + " already exists");
-            Possession originalPosition = possessionOptional.get();
-            originalPosition.setShares(possession.getShares());
-
-            originalPosition = possessionRepoI.save(originalPosition);
-
-            return originalPosition;
-        } else if (userOptional.isPresent() && stockOptional.isPresent()){
-            log.debug("Possession with user " + possession.getUser().getEmail() + " does not exists");
-            User confirmedUser = userOptional.get();
-            Stock confirmedStock = stockOptional.get();
-
-            possessionRepoI.saveAndFlush(possession);
-
-            confirmedUser.addPossession(possession);
-            confirmedStock.addPossession(possession);
-            userRepoI.save(confirmedUser);
-            stockRepoI.save(confirmedStock);
-
-            return possessionRepoI.save(possession);
-        } else {
-            throw new Exception("createOrUpdate(): saving a possession " + possession + " did not go well!");
+        if (possession == null || possession.getUser() == null || possession.getStock() == null) {
+            throw new IllegalArgumentException("createOrUpdate(): possession, user, and stock are required.");
         }
+
+        // Confirm entities from DB (managed + valid IDs)
+        User confirmedUser = userRepoI.findByEmail(possession.getUser().getEmail())
+                .orElseThrow(() -> new Exception("createOrUpdate(): user not found: " + possession.getUser().getEmail()));
+
+        Stock confirmedStock = stockRepoI.findByTicker(possession.getStock().getTicker())
+                .orElseThrow(() -> new Exception("createOrUpdate(): stock not found: " + possession.getStock().getTicker()));
+
+        // Find existing position using confirmed entities
+        Optional<Possession> existingOpt = possessionRepoI.findByUserAndStock(confirmedUser, confirmedStock);
+
+        if (existingOpt.isPresent()) {
+            Possession existing = existingOpt.get();
+            existing.setShares(possession.getShares());
+            log.debug("createOrUpdate(): updated shares for {} / {}", confirmedUser.getEmail(), confirmedStock.getTicker());
+            return possessionRepoI.save(existing);
+        }
+
+        // Create new position using confirmed entities
+        Possession newPossession = new Possession(possession.getShares(), confirmedUser, confirmedStock);
+
+        // Persist possession
+        newPossession = possessionRepoI.saveAndFlush(newPossession);
+
+        // Maintain your current "portfolio" modeling (UserServices.retrievePortfolio reads from user's collection)
+        confirmedUser.addPossession(newPossession);
+        confirmedStock.addPossession(newPossession);
+
+        userRepoI.save(confirmedUser);
+        stockRepoI.save(confirmedStock);
+
+        log.debug("createOrUpdate(): created new possession for {} / {}", confirmedUser.getEmail(), confirmedStock.getTicker());
+        return newPossession;
     }
 
-    public Possession createOrUpdate(Possession possession, User user, Stock stock) {
-        Optional<Possession> possessionOptional = possessionRepoI.findByUserAndStock(possession.getUser(), possession.getStock());
-
-        if (possessionOptional.isPresent()) {
-            log.debug("createOrUpdate(): Possession with user " + possession.getUser().getEmail() + " already exists");
-
-            Possession originalPosition = possessionOptional.get();
-            originalPosition.setShares(possession.getShares());
-
-            originalPosition = possessionRepoI.save(originalPosition);
-
-            return originalPosition;
-        } else {
-            log.debug("createOrUpdate(): New possession for user " + possession.getUser().getEmail() + " has been created");
-            Possession newPossession = possessionRepoI.saveAndFlush(possession);
-            log.debug("createOrUpdate(): New possession info is " + newPossession);
-
-            user.addPossession(newPossession);
-            stock.addPossession(newPossession);
-            userRepoI.save(user);
-            stockRepoI.save(stock);
-            return newPossession;
+    /**
+     * Keep this overload, but make it safe: confirm user/stock from DB and delegate.
+     */
+    public Possession createOrUpdate(Possession possession, User user, Stock stock) throws Exception {
+        if (possession == null || user == null || stock == null) {
+            throw new IllegalArgumentException("createOrUpdate(possession,user,stock): all params are required.");
         }
+
+        // Force the possession to use the provided identities (then delegate to the safe path)
+        possession.setUser(user);
+        possession.setStock(stock);
+        return createOrUpdate(possession);
     }
 
+    public Possession addOrUpdatePosition(String userEmail, String ticker, double shares) throws Exception {
+        User confirmedUser = userRepoI.findByEmail(userEmail)
+                .orElseThrow(() -> new Exception("User not found: " + userEmail));
+    
+        Stock confirmedStock = stockRepoI.findByTicker(ticker)
+                .orElseThrow(() -> new Exception("Stock not found: " + ticker));
+    
+        Optional<Possession> existing = possessionRepoI.findByUserAndStock(confirmedUser, confirmedStock);
+    
+        if (existing.isPresent()) {
+            Possession p = existing.get();
+            p.setShares(shares);
+            return possessionRepoI.saveAndFlush(p);
+        }
+    
+        Possession p = new Possession(shares, confirmedUser, confirmedStock);
+        return possessionRepoI.saveAndFlush(p);
+    }
+    
+    
 }

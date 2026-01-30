@@ -115,18 +115,6 @@ public class UserServices {
         }
     }
 
-//    public User createAuthRunning(User user) {
-//        AuthGroup newAuth = new AuthGroup(user.getEmail(), "ROLE_USER");
-//        authGroupRepoI.saveAndFlush(newAuth);
-//        AppUserPrincipal appUserPrincipal = new AppUserPrincipal(user, authGroupRepoI.findAll());
-////        appUserPrincipal.getAuthorities();
-////        appUserDetailService.loadUserByUsername(user.getEmail());
-//        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(newAuth, user.getPassword(), appUserPrincipal.getAuthorities()));
-//        log.warn("createAuthRunning: ");
-//
-//        return user;
-//    }
-
     public User addOrUpdateAddress(Address address, User user) {
         Optional<Address> addressOptional = addressRepoI.findById(address.getId());
         if (addressOptional.isPresent()) {
@@ -168,37 +156,124 @@ public class UserServices {
         }
     }
 
+    // *** UPDATED on 01/28
     public User deletePossesionToUser(Possession possession) throws Exception {
-        Optional<Possession> userPossession =
-                possessionRepoI.findById(possession.getId());
-        Optional<User> optionalUser =
-                userRepoI.findByEmailAllIgnoreCase(possession.getUser().getEmail());
 
-        if(userPossession.isPresent() && optionalUser.isPresent()) {
-
+        Optional<Possession> userPossession = possessionRepoI.findById(possession.getId());
+        Optional<User> optionalUser = userRepoI.findByEmailAllIgnoreCase(possession.getUser().getEmail());
+    
+        if (userPossession.isPresent() && optionalUser.isPresent()) {
+    
             User confirmedUser = optionalUser.get();
             Possession confirmedPossession = userPossession.get();
+    
+            // IMPORTANT: use the stock attached to the confirmed possession (managed/real)
+            var confirmedStock = confirmedPossession.getStock();
+    
             confirmedUser.removePossession(confirmedPossession);
-            possession.getStock().removePossession(confirmedPossession);
-
-            confirmedUser = userRepoI.saveAndFlush(confirmedUser);
-            stockRepoI.saveAndFlush(possession.getStock());
+            confirmedStock.removePossession(confirmedPossession);
+    
+            userRepoI.saveAndFlush(confirmedUser);
+            stockRepoI.saveAndFlush(confirmedStock);
             possessionRepoI.delete(confirmedPossession);
-
-            return userRepoI.save(confirmedUser);
+    
+            return confirmedUser;
+    
         } else {
-            throw new Exception("removing a possession to stock " + possession.getStock().getStockName() + " " +
-                    "did not go well!!!!!");
+            throw new Exception("deletePossesionToUser failed: possessionId=" + possession.getId() + ", email=" + (possession.getUser() != null ? possession.getUser().getEmail() : "null"));
         }
     }
+
+    // used to delete on User Account (within UserController)
+    public User deletePossesionToUser(String userEmail, Integer possessionId) throws Exception {
+
+        Optional<User> optionalUser = userRepoI.findByEmailAllIgnoreCase(userEmail);
+        Optional<Possession> userPossession = possessionRepoI.findById(possessionId);
+    
+        if (optionalUser.isPresent() && userPossession.isPresent()) {
+    
+            User confirmedUser = optionalUser.get();
+            Possession confirmedPossession = userPossession.get();
+    
+            // Ownership check (prevents deleting someone else's possession)
+            if (confirmedPossession.getUser() == null
+                    || confirmedPossession.getUser().getId() == null
+                    || !confirmedPossession.getUser().getId().equals(confirmedUser.getId())) {
+                throw new Exception("deletePossesionToUser failed: possessionId=" + possessionId
+                        + " does not belong to user=" + userEmail);
+            }
+    
+            var confirmedStock = confirmedPossession.getStock();
+    
+            confirmedUser.removePossession(confirmedPossession);
+            if (confirmedStock != null) {
+                confirmedStock.removePossession(confirmedPossession);
+                stockRepoI.saveAndFlush(confirmedStock);
+            }
+    
+            userRepoI.saveAndFlush(confirmedUser);
+            possessionRepoI.delete(confirmedPossession);
+    
+            return confirmedUser;
+    
+        } else {
+            throw new Exception("deletePossesionToUser failed: possessionId=" + possessionId + ", email=" + userEmail);
+        }
+    }
+
+    
+    public User deletePossessionByTicker(String userEmail, String ticker) throws Exception {
+
+        var optionalUser = userRepoI.findByEmailAllIgnoreCase(userEmail);
+        var optionalStock = stockRepoI.findByTicker(ticker);
+    
+        if (optionalUser.isPresent() && optionalStock.isPresent()) {
+            User confirmedUser = optionalUser.get();
+            Stock confirmedStock = optionalStock.get();
+    
+            // find possession by confirmed entities
+            var userPossession = possessionRepoI.findByUserAndStock(confirmedUser, confirmedStock);
+    
+            if (userPossession.isEmpty()) {
+                throw new Exception("deletePossessionByTicker failed: no possession for user=" + userEmail + ", ticker=" + ticker);
+            }
+    
+            Possession confirmedPossession = userPossession.get();
+    
+            confirmedUser.removePossession(confirmedPossession);
+            confirmedStock.removePossession(confirmedPossession);
+    
+            userRepoI.saveAndFlush(confirmedUser);
+            stockRepoI.saveAndFlush(confirmedStock);
+            possessionRepoI.delete(confirmedPossession);
+    
+            return confirmedUser;
+        }
+    
+        throw new Exception("deletePossessionByTicker failed: user=" + userEmail + ", ticker=" + ticker);
+    }
+    
+    
+    
 
     public List<Possession> retrievePortfolio(String email) throws Exception {
+
+        if (email == null || email.isBlank()) {
+            throw new Exception("retrievePortfolio: email was null/blank - cannot retrieve portfolio!!!!!");
+        }
+    
         if (userRepoI.findByEmailAllIgnoreCase(email).isPresent()) {
-            log.debug("retrievePortfolio: retrievePortfolio was successful");
-            return userRepoI.findByEmailAllIgnoreCase(email).get().getUserPossessions();
+            log.debug("retrievePortfolio: user exists, retrieving portfolio for " + email);
+    
+            List<Possession> portfolio = possessionRepoI.findByUserEmailWithStock(email);
+    
+            log.debug("retrievePortfolio: retrievePortfolio was successful, positions found = " + portfolio.size());
+            return portfolio;
+    
         } else {
-            throw new Exception("retrievePortfolio: retrieving stock portfolio of the user " + email + " did not go well!!!!!");
+            throw new Exception("retrievePortfolio: user " + email + " does not exist - portfolio retrieval did not go well!!!!!");
         }
     }
+    
 
 }
