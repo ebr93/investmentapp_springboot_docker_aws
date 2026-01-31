@@ -41,10 +41,15 @@ public class UserServices {
         this.stockRepoI = stockRepoI;
     }
 
-    public User createOrUpdate(User user) {
+    public User createOrUpdate(User user) throws Exception {
+        if (user == null) 
+        throw new Exception("createOrUpdate(): user was null");
+        if (user.getEmail() == null || user.getEmail().isBlank())
+            throw new Exception("createOrUpdate(): email was null/blank");
+
         Optional<User> userOptional = userRepoI.findByEmailAllIgnoreCase(user.getEmail());
 
-        if (userOptional.isPresent() || user.getId() != null) {
+        if (userOptional.isPresent()) {
             log.warn("createOrUpdate(): user with email " + user.getEmail() +
                     " already exists");
             User originalUser = userOptional.get();
@@ -54,19 +59,17 @@ public class UserServices {
             originalUser.setEmail(user.getEmail());
 
             log.warn("createOrUpdate(): user with email " + user.getEmail() +
-                    " already exists");
+                    " is updated");
 
             return userRepoI.save(originalUser);
-        } else {
-            log.debug("createOrUpdate(): user with email " + user.getEmail() + " has been created");
+        } 
 
-//            user.setPassword(user.getPassword());
+        log.debug("createOrUpdate(): user with email " + user.getEmail() + " has been created");
 
-            AuthGroup newAuth = new AuthGroup(user.getEmail(), "ROLE_USER");
-            authGroupRepoI.save(newAuth);
+        AuthGroup newAuth = new AuthGroup(user.getEmail(), "ROLE_USER");
+        authGroupRepoI.save(newAuth);
 
-            return userRepoI.save(user);
-        }
+        return userRepoI.save(user);
     }
 
     public User createOrUpdate(User user, User editUser) {
@@ -86,8 +89,6 @@ public class UserServices {
         } else {
             log.debug("createOrUpdate(): user with email " + user.getEmail() + " has been created");
 
-//            user.setPassword(user.getPassword());
-
             AuthGroup newAuth = new AuthGroup(user.getEmail(), "ROLE_USER");
             authGroupRepoI.save(newAuth);
 
@@ -104,8 +105,6 @@ public class UserServices {
             User originalUser = userOptional.get();
             originalUser.setFirstName(user.getFirstName());
             originalUser.setLastName(user.getLastName());
-
-//            originalUser.setEmail(user.getEmail());
 
             return userRepoI.save(originalUser);
         } else {
@@ -135,54 +134,7 @@ public class UserServices {
         }
     }
 
-    public User deletePossesionToUser(Stock stock, User user) throws Exception {
-        Optional<Possession> userPossession = possessionRepoI.findByUserAndStock(user, stock);
-        Optional<User> optionalUser = userRepoI.findByEmailAllIgnoreCase(user.getEmail());
 
-        if(userPossession.isPresent() && optionalUser.isPresent()) {
-
-            User confirmedUser = optionalUser.get();
-            Possession confirmedPossession = userPossession.get();
-            confirmedUser.removePossession(confirmedPossession);
-            stock.removePossession(confirmedPossession);
-
-            confirmedUser = userRepoI.saveAndFlush(confirmedUser);
-            stockRepoI.saveAndFlush(stock);
-            possessionRepoI.delete(confirmedPossession);
-
-            return userRepoI.save(confirmedUser);
-        } else {
-            throw new Exception("removing a possession to the user " + user.getEmail() + " did not go well!!!!!");
-        }
-    }
-
-    // *** UPDATED on 01/28
-    public User deletePossesionToUser(Possession possession) throws Exception {
-
-        Optional<Possession> userPossession = possessionRepoI.findById(possession.getId());
-        Optional<User> optionalUser = userRepoI.findByEmailAllIgnoreCase(possession.getUser().getEmail());
-    
-        if (userPossession.isPresent() && optionalUser.isPresent()) {
-    
-            User confirmedUser = optionalUser.get();
-            Possession confirmedPossession = userPossession.get();
-    
-            // IMPORTANT: use the stock attached to the confirmed possession (managed/real)
-            var confirmedStock = confirmedPossession.getStock();
-    
-            confirmedUser.removePossession(confirmedPossession);
-            confirmedStock.removePossession(confirmedPossession);
-    
-            userRepoI.saveAndFlush(confirmedUser);
-            stockRepoI.saveAndFlush(confirmedStock);
-            possessionRepoI.delete(confirmedPossession);
-    
-            return confirmedUser;
-    
-        } else {
-            throw new Exception("deletePossesionToUser failed: possessionId=" + possession.getId() + ", email=" + (possession.getUser() != null ? possession.getUser().getEmail() : "null"));
-        }
-    }
 
     // used to delete on User Account (within UserController)
     public User deletePossesionToUser(String userEmail, Integer possessionId) throws Exception {
@@ -253,9 +205,6 @@ public class UserServices {
         throw new Exception("deletePossessionByTicker failed: user=" + userEmail + ", ticker=" + ticker);
     }
     
-    
-    
-
     public List<Possession> retrievePortfolio(String email) throws Exception {
 
         if (email == null || email.isBlank()) {

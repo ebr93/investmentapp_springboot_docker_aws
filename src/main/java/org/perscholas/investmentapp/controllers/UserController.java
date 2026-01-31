@@ -21,7 +21,7 @@ import java.util.List;
 
 @Controller
 @Slf4j
-@SessionAttributes(value = {"currentUser"})
+@SessionAttributes(value = {"currentUser"})   // NOTE: keeping this since your flow relies on it
 @RequestMapping("/user")
 class UserController {
 
@@ -51,7 +51,7 @@ class UserController {
         this.authGroupRepoI = authGroupRepoI;
     }
 
-    // Helper: always prefer User email for DB writes (prevents session/currentUser drift)
+    // Helper: always prefer principal email for DB writes (prevents session/currentUser drift)
     private String requireUserEmail(HttpServletRequest request) throws Exception {
         Principal p = request.getUserPrincipal();
         if (p == null) throw new Exception("Not authenticated (principal is null)");
@@ -63,8 +63,8 @@ class UserController {
                                 Model model,
                                 HttpSession http) throws Exception {
 
-        log.warn("the value of CurrentUser is " + user);
-        log.warn("the attr of session currentUser in model is " + http.getAttribute("currentUser"));
+        log.warn("dashboard(): currentUser model attr = {}", user);
+        log.warn("dashboard(): session currentUser attr = {}", http.getAttribute("currentUser"));
 
         if (user != null) {
             List<StockDTO> allStocks = stockServices.allStocks();
@@ -86,15 +86,15 @@ class UserController {
                            HttpServletRequest request) throws Exception {
 
         log.warn("/user/dashboard/addstock: add stock has initialized");
-        log.warn("/user/dashboard/addstock: " + user);
-        log.warn("/user/dashboard/addstock: " + (user != null ? user.getEmail() : "null"));
+        log.warn("/user/dashboard/addstock: currentUser={}", user);
+        log.warn("/user/dashboard/addstock: currentUserEmail={}", (user != null ? user.getEmail() : "null"));
 
-        // ✅ FIX: don't use stockRepoI.findByTicker(ticker).get()
-        // ✅ FIX: don't build Possession using detached session User/Stock
+        // ✅ FIX: Don't do stockRepoI.findByTicker(ticker).get()
+        // ✅ FIX: Don't build Possession with detached session entities
         String userEmail = requireUserEmail(request);
         possessionServices.addOrUpdatePosition(userEmail, ticker, shares);
 
-        log.warn("user/dashboard/addstock: stock has been added/updated for user " + userEmail);
+        log.warn("/user/dashboard/addstock: stock added/updated for user {}", userEmail);
         return "redirect:/user/dashboard";
     }
 
@@ -103,8 +103,8 @@ class UserController {
                             Model model,
                             HttpSession http) throws Exception {
 
-        log.warn("portfolio(): currentUser from @ModelAttribute = {}", (user != null ? user.getEmail() : "null"));
-
+        log.warn("/user/portfolio: session currentUser attr = {}", http.getAttribute("currentUser"));
+        log.warn("/user/portfolio: currentUser model attr email = {}", (user != null ? user.getEmail() : "null"));
 
         if (user != null) {
             List<Possession> userPortfolio = userServices.retrievePortfolio(user.getEmail());
@@ -124,66 +124,42 @@ class UserController {
                                  HttpServletRequest request) throws Exception {
 
         log.warn("/user/portfolio/edit: edit possession has initialized");
-        log.warn("/user/portfolio/edit: " + user);
-        log.warn("/user/portfolio/edit: " + (user != null ? user.getEmail() : "null"));
+        log.warn("/user/portfolio/edit: currentUser={}", user);
+        log.warn("/user/portfolio/edit: currentUserEmail={}", (user != null ? user.getEmail() : "null"));
 
-        // ✅ FIX: same as addStock—use principal email + ticker + shares, let service confirm entities
+        // ✅ FIX: same safe flow as addStock
         String userEmail = requireUserEmail(request);
         possessionServices.addOrUpdatePosition(userEmail, ticker, shares);
 
-        log.warn("user/portfolio/edit: possession has been edited for " + userEmail);
+        log.warn("/user/portfolio/edit: possession updated for {}", userEmail);
         return "redirect:/user/portfolio";
     }
 
     /**
-     * ✅ Keep your existing endpoint for backwards compatibility:
+     * ✅ KEEP: your existing endpoint so the website still works:
      * POST /user/portfolio/delete/{ticker}
-     *
-     * But route it through a safe DB-confirmed delete (no detached entities).
      */
     @PostMapping("/portfolio/delete/{ticker}")
-    public String deletePossessionByTicker(@ModelAttribute("currentUser") User user,
-                                           @PathVariable(name = "ticker") String ticker,
-                                           HttpServletRequest request) throws Exception {
+    public String deletePossession(@ModelAttribute("currentUser") User user,
+                                   @PathVariable(name = "ticker") String ticker,
+                                   HttpServletRequest request) throws Exception {
 
         if (ticker != null) {
             log.warn("/user/portfolio/delete/{ticker}: delete possession has initialized");
-            log.warn("/user/portfolio/delete/{ticker}: ticker=" + ticker);
-            log.warn("/user/portfolio/delete/{ticker}: " + user);
-            log.warn("/user/portfolio/delete/{ticker}: " + (user != null ? user.getEmail() : "null"));
+            log.warn("/user/portfolio/delete/{ticker}: ticker={}", ticker);
+            log.warn("/user/portfolio/delete/{ticker}: currentUser={}", user);
+            log.warn("/user/portfolio/delete/{ticker}: currentUserEmail={}", (user != null ? user.getEmail() : "null"));
 
             String userEmail = requireUserEmail(request);
 
-            // ✅ Safe: delete by (userEmail + ticker) using DB-confirmed entities
-            // You can implement this method in UserServices OR PossessionServices.
+            // ✅ FIX: delete using DB-confirmed user + stock, not detached session entities
             userServices.deletePossessionByTicker(userEmail, ticker);
 
-            log.warn("user/portfolio/delete/{ticker}: possession has been removed from user " + userEmail);
+            log.warn("/user/portfolio/delete/{ticker}: possession removed from {}", userEmail);
             return "redirect:/user/portfolio";
         } else {
             throw new Exception("/user/portfolio/delete/{ticker}: ticker was null");
         }
-    }
-
-    /**
-     * ✅ Recommended new endpoint (more robust than ticker):
-     * POST /user/portfolio/delete with possessionId.
-     * Update Thymeleaf to use this when you can.
-     */
-    @PostMapping("/portfolio/delete")
-    public String deletePossessionById(HttpServletRequest request,
-                                       @RequestParam("possessionId") Integer possessionId) throws Exception {
-
-        String userEmail = requireUserEmail(request);
-
-        log.warn("/user/portfolio/delete: delete possession has initialized");
-        log.warn("/user/portfolio/delete: possessionId=" + possessionId);
-        log.warn("/user/portfolio/delete: userEmail=" + userEmail);
-
-        userServices.deletePossesionToUser(userEmail, possessionId);
-
-        log.warn("user/portfolio/delete: possession has been removed from user " + userEmail);
-        return "redirect:/user/portfolio";
     }
 
     @GetMapping("/account")
@@ -191,7 +167,7 @@ class UserController {
                           Model model) throws Exception {
 
         if (user != null) {
-            log.warn("/user/account: CurrentUser is not null, email is " + user.getEmail());
+            log.warn("/user/account: CurrentUser is not null, email is {}", user.getEmail());
 
             User editUser = new User();
             editUser.setFirstName(user.getFirstName());
@@ -199,7 +175,7 @@ class UserController {
             editUser.setEmail(user.getEmail());
             model.addAttribute("editUser", editUser);
 
-            // ✅ guard address access
+            // ✅ FIX: don't assume address exists
             if (user.getAddress() != null) {
                 Address editAddress = addressRepoI.findById(user.getAddress().getId())
                         .orElseThrow(() -> new Exception("/user/account: address not found for id=" + user.getAddress().getId()));
@@ -221,24 +197,24 @@ class UserController {
                               BindingResult bindingResult,
                               HttpServletRequest request) throws Exception {
 
-        log.warn("/user/account/edit: editUser is not null, info is " + editUser);
+        Principal p = request.getUserPrincipal();
+        log.warn("/user/account/edit: editUser = {}", editUser);
 
         if (bindingResult.hasErrors()) {
             log.debug(bindingResult.getAllErrors().toString());
             return "useraccount";
         }
 
-        Principal p = request.getUserPrincipal();
         if (editUser != null && p != null) {
 
             User principalUser = userRepoI.findByEmail(p.getName())
                     .orElseThrow(() -> new Exception("/user/account/edit: principal user not found: " + p.getName()));
 
-            log.warn("/user/account/edit: CurrentUser(principal) is not null, email is " + principalUser.getEmail());
+            log.warn("/user/account/edit: principal user email = {}", principalUser.getEmail());
 
             List<AuthGroup> authGroupList = authGroupRepoI.findByEmail(principalUser.getEmail());
             if (authGroupList.isEmpty()) {
-                throw new Exception("/user/account/edit: auth groups not found for: " + principalUser.getEmail());
+                throw new Exception("/user/account/edit: auth group not found for " + principalUser.getEmail());
             }
 
             AuthGroup userAuth = authGroupList.get(0);
@@ -247,13 +223,13 @@ class UserController {
 
             editUser = userServices.createOrUpdate(principalUser, editUser);
 
-            // ✅ FIX: you had user.setEmail(editUser.getLastName()) — that breaks session identity
+            // ✅ FIX: keep session user in sync (you had editUser.getLastName() before)
             user.setFirstName(editUser.getFirstName());
             user.setLastName(editUser.getLastName());
             user.setEmail(editUser.getEmail());
 
-            log.warn("/user/account/edit: User " + editUser.getEmail() + " was updated");
-            log.warn("/user/account/edit: Session user " + user.getEmail() + " was updated");
+            log.warn("/user/account/edit: User {} was updated", editUser.getEmail());
+            log.warn("/user/account/edit: Session user now {}", user.getEmail());
 
         } else {
             throw new Exception("/user/account/edit: currentUser is not logged in");
@@ -273,7 +249,7 @@ class UserController {
         }
 
         if (editAddress != null && user != null) {
-            log.warn("/user/account/edit_address: editAddress is not null, info is " + editAddress + " id: " + editAddress.getId());
+            log.warn("/user/account/edit_address: editAddress is not null, info is {} id: {}", editAddress, editAddress.getId());
             userServices.addOrUpdateAddress(editAddress, user);
         } else {
             throw new Exception("/user/account/edit_address: editAddress was null");
@@ -282,110 +258,3 @@ class UserController {
         return "redirect:/user/account";
     }
 }
-
-/* BEFORE FIX OF ADDING BACK ALL METHODS, DELETING AND 'ACCOUNT' SITE DO NOT WORK 
-package org.perscholas.investmentapp.controllers;
-
-import lombok.extern.slf4j.Slf4j;
-import org.perscholas.investmentapp.dao.UserRepoI;
-import org.perscholas.investmentapp.dto.StockDTO;
-import org.perscholas.investmentapp.models.Possession;
-import org.perscholas.investmentapp.models.User;
-import org.perscholas.investmentapp.services.PossessionServices;
-import org.perscholas.investmentapp.services.StockServices;
-import org.perscholas.investmentapp.services.UserServices;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.*;
-
-import java.security.Principal;
-import java.util.List;
-
-@Controller
-@Slf4j
-@RequestMapping("/user")
-class UserController {
-
-    private final UserRepoI userRepoI;
-    private final UserServices userServices;
-    private final StockServices stockServices;
-    private final PossessionServices possessionServices;
-
-    @Autowired
-    public UserController(UserRepoI userRepoI,
-                          UserServices userServices,
-                          StockServices stockServices,
-                          PossessionServices possessionServices) {
-        this.userRepoI = userRepoI;
-        this.userServices = userServices;
-        this.stockServices = stockServices;
-        this.possessionServices = possessionServices;
-    }
-
-    private User requireUser(Principal principal) throws Exception {
-        if (principal == null) throw new Exception("Not authenticated");
-        return userRepoI.findByEmail(principal.getName())
-                .orElseThrow(() -> new Exception("Authenticated user not found in DB: " + principal.getName()));
-    }
-
-    @GetMapping("/dashboard")
-    public String dashboard(Principal principal, Model model) throws Exception {
-        User user = requireUser(principal);
-        log.warn("dashboard(): principal user = {}", user.getEmail());
-
-        List<StockDTO> allStocks = stockServices.allStocks();
-        model.addAttribute("allStocks", allStocks);
-
-        List<Possession> userPortfolio = userServices.retrievePortfolio(user.getEmail());
-        model.addAttribute("userPortfolio", userPortfolio);
-
-        return "userdashboard";
-    }
-
-    @PostMapping("/dashboard/addstock")
-    public String addStock(Principal principal,
-                           @RequestParam("ticker") String ticker,
-                           @RequestParam("shares") double shares) throws Exception {
-
-        User user = requireUser(principal);
-        log.warn("addStock(): user={}, ticker={}, shares={}", user.getEmail(), ticker, shares);
-
-        possessionServices.addOrUpdatePosition(user.getEmail(), ticker, shares);
-
-        return "redirect:/user/dashboard";
-    }
-
-    @GetMapping("/portfolio")
-    public String portfolio(Principal principal, Model model) throws Exception {
-        User user = requireUser(principal);
-
-        List<Possession> userPortfolio = userServices.retrievePortfolio(user.getEmail());
-        model.addAttribute("userPortfolio", userPortfolio);
-
-        return "userportfolio";
-    }
-
-    // ✅ Safe delete (sell/remove) — only pass primitives, service reloads confirmed entities
-    @PostMapping("/portfolio/delete")
-    public String deletePossession(Principal principal,
-                                   @RequestParam("possessionId") Integer possessionId) throws Exception {
-    
-        User user = requireUser(principal);
-        log.warn("deletePossession(): user={}, possessionId={}", user.getEmail(), possessionId);
-    
-        // Call UserServices (since delete is in UserServices in your codebase)
-        userServices.deletePossesionToUser(user.getEmail(), possessionId);
-    
-        return "redirect:/user/portfolio";
-    }
-
-    // Account page (simple GET)
-    @GetMapping("/account")
-    public String account(Principal principal, Model model) throws Exception {
-        User user = requireUser(principal);
-        model.addAttribute("user", user);
-        return "account";
-    }
-}
-*/

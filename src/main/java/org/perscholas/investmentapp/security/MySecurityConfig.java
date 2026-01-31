@@ -40,13 +40,16 @@ public class MySecurityConfig {
         return provider;
     }
 
+
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(4);
+        // for dev 4 is good, for deployment 10 or 12
+        return new BCryptPasswordEncoder(10);
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        // change this to enable, disable() is not ideal for public deployment
         http.csrf().disable()
                 .authorizeHttpRequests((requests) -> requests
                         .requestMatchers("/","/index/**","/css/**", "/javascript/**", "/imgs/**", "/dashboard/**", "/signup").permitAll()

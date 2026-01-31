@@ -16,9 +16,12 @@ import java.util.Objects;
 
 @AllArgsConstructor
 @NoArgsConstructor
-//@RequiredArgsConstructor
 @Entity
-@Table(name = "myusers")
+// Forces the table to only accept unique emails
+@Table(
+    name = "myusers",
+    uniqueConstraints = @UniqueConstraint(name="uk_myusers_email", columnNames="email")
+)
 @Slf4j
 @Setter
 @Getter
@@ -86,17 +89,18 @@ public class User {
         this.password = new BCryptPasswordEncoder(4).encode(password);
     }
 
+    // MODIFY: check return and make it more efficient
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         User user = (User) o;
-        return Objects.equals(firstName, user.firstName) && Objects.equals(lastName, user.lastName) && Objects.equals(email, user.email) && Objects.equals(password, user.password);
+        return Objects.equals(firstName, user.firstName) && Objects.equals(lastName, user.lastName) && Objects.equals(email, user.email);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(firstName, lastName, email, password);
+        return Objects.hash(firstName, lastName, email);
     }
 
     public void addPossession(Possession possession) {
