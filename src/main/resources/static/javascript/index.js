@@ -61,7 +61,7 @@ async function getData(container) {
     return responseData;
 
   } catch (err) {
-    console.log(err);
+    console.log("Error when fetching News from FinanceAPI");
   }
 }
 

@@ -104,7 +104,12 @@ public class MyCommandLineRunner implements CommandLineRunner {
         User user = new User(firstName, lastName, email, rawPassword);
 
         // Persist user (use service if it applies defaults/roles)
-        userServices.createOrUpdate(user);
+        try {
+                userServices.createOrUpdate(user);
+        } catch (Exception e) {
+                log.debug("User: " + user.getEmail() + ", failed to be created at MyCommandLineRunner");
+                e.printStackTrace();
+        }
 
         // Attach address via service helper
         userServices.addOrUpdateAddress(savedAddress, user);

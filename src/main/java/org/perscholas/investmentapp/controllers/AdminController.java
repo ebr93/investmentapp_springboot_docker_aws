@@ -70,6 +70,7 @@ public class AdminController {
         Optional<User> userOptional = userRepoI.findByEmailAllIgnoreCase(email);
 
         if (userOptional.isPresent()) {
+
             User user = userOptional.get();
             
             user.setFirstName(firstName);
@@ -100,7 +101,7 @@ public class AdminController {
                 List<Possession> possessions = userPossessions.get();
                 
                 for (Possession p : possessions) {
-                    userServices.deletePossesionToUser(p.getStock(), user);
+                    userServices.deletePossesionToUser(user.getEmail(), p.getId());
                 }
             }
 
@@ -162,7 +163,7 @@ public class AdminController {
         }
     }
 
-    // this works
+    // this is to overall delete a stock accross DB
     @PostMapping("/stocks/delete/{ticker}")
     public String deleteStock(
             @PathVariable(name="ticker") String ticker) throws Exception {
@@ -182,7 +183,7 @@ public class AdminController {
                 List<Possession> possessions = stockUsage.get();
                 
                 for (Possession p : possessions) {
-                    userServices.deletePossesionToUser(p);
+                    userServices.deletePossesionToUser(p.getUser().getEmail(), p.getId());
                 }
             }
 
